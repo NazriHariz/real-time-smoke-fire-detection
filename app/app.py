@@ -1,39 +1,66 @@
-from litestar import Litestar, post, Response
-from litestar.params import Body
-from litestar.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
 import os
+import sys
+import tempfile
+from dataclasses import dataclass
+from typing import Annotated
+from litestar import Litestar, post, Response
+from litestar.datastructures import UploadFile
+from litestar.enums import RequestEncodingType
+from litestar.params import Body
+from litestar.config.cors import CORSConfig
 
+
+# ✅ Correct CORS setup
+cors_config = CORSConfig(
+    allow_origins=["http://localhost:5173"],  # adjust based on frontend
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
+# Include custom module if needed
+sys.path.append(os.path.dirname(__file__))
 from customFireDetector import YOLOv11Detector
 
-detector = YOLOv11Detector(model_path="/mnt/c/Users/ASUS/Documents/yolov11/best_nano_111.pt")
+# Init detector
+detector = YOLOv11Detector(
+    model_path="./best_nano_111.pt"
+)
 
-# Define request model
-class VideoRequest(BaseModel):
-    path: str
+ALLOWED_EXTS = {".jpg", ".jpeg", ".png", ".bmp", ".mp4", ".avi", ".mov", ".mkv"}
 
-@post("/predict")
-async def predict_endpoint(data: VideoRequest = Body()) -> Response:
-    video_path = data.path
+# --- Dataclass to receive multipart form-data ---
+@dataclass
+class PredictRequest:
+    file: UploadFile
 
-    if not os.path.exists(video_path):
-        return Response(
-            content={"error": f"File does not exist: {video_path}"},
-            status_code=400,
-        )
 
-    ext = os.path.splitext(video_path)[1].lower()
-    allowed_exts = {".jpg", ".jpeg", ".png", ".bmp", ".mp4", ".avi", ".mov", ".mkv"}
-    if ext not in allowed_exts:
-        return Response(
-            content={"error": f"Unsupported extension: {ext}"},
-            status_code=400,
-        )
+@post(path="/predict")
+async def predict_handler(
+    data: Annotated[PredictRequest, Body(media_type=RequestEncodingType.MULTI_PART)]
+) -> Response:
+    ext = os.path.splitext(data.file.filename)[1].lower()
+
+    if ext not in ALLOWED_EXTS:
+        return Response({"error": f"Unsupported extension: {ext}"}, status_code=400)
+
+    with tempfile.NamedTemporaryFile(delete=False, suffix=ext) as tmp:
+        tmp.write(await data.file.read())
+        tmp_path = tmp.name
 
     try:
-        detections = detector.predict(video_path)
-        return Response(content={"detections": detections})
+        detections = detector.predict(tmp_path)
+        return Response({"filename": data.file.filename, "detections": detections})
     except Exception as e:
-        return Response(content={"error": str(e)}, status_code=500)
+        return Response({"error": str(e)}, status_code=500)
+    finally:
+        os.remove(tmp_path)
 
-app = Litestar(route_handlers=[predict_endpoint])
+
+# App init
+# app = Litestar(route_handlers=[predict_handler])
+app = Litestar(
+    route_handlers=[predict_handler],
+    cors_config=cors_config
+)
