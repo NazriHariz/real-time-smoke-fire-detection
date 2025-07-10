@@ -5,6 +5,7 @@ import json
 import datetime as dt
 from dataclasses import dataclass
 from typing import Annotated
+from jreedpart import analyze_and_store_detections
 from litestar import Litestar, post, Response
 from litestar.datastructures import UploadFile
 from litestar.enums import RequestEncodingType
@@ -71,17 +72,15 @@ async def predict_handler(
         # Step 3: Upload final video to drive (optional)
         file_id = upload_to_drive(final_path, os.path.basename(final_path))
 
+        # Step 4 : Upload to DB
+        result = analyze_and_store_detections(detections, file_name,file_id)
+
         # Clean up
         os.remove(tmp_path)
         os.remove(trimmed_path)
         os.remove(final_path)
 
-        return Response({
-            "filename": file_name,
-            "detection_datetime": dt.datetime.now(),
-            "detections": detections,
-            "video_drive_id": file_id
-        })
+        return detections
 
     except Exception as e:
         return Response({"error": str(e)}, status_code=500)
