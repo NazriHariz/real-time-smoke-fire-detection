@@ -62,6 +62,8 @@ async def predict_handler(
         # Step 1: Detect and trim 5s clip from detection
         detections = detector.detect_and_trim(tmp_path, output_video=trimmed_path)
 
+        print(detections)
+
         if not detections:
             os.remove(tmp_path)
             return Response({"filename": data.file.filename, "message": "No fire/smoke detected."})
@@ -73,7 +75,7 @@ async def predict_handler(
         file_id = upload_to_drive(final_path, os.path.basename(final_path))
 
         # Step 4 : Upload to DB
-        result = analyze_and_store_detections(detections, file_name,file_id)
+        analyze_and_store_detections(detections, file_name,file_id)
 
         # Clean up
         os.remove(tmp_path)

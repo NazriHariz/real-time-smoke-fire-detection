@@ -11,42 +11,52 @@ SCOPES = ['https://www.googleapis.com/auth/drive.file']
 
 service_cred = '/home/ir-nazri/Documents/yolov11/real-time-smoke-fire-detection/credentials.json'
 
-def get_credentials():
+def get_credentials() -> Credentials:
     creds = None
-    # 1. Check if token already exists
-    if os.path.exists('token.json'):
-        creds = Credentials.from_authorized_user_file('token.json', SCOPES)
 
-    # 2. If no valid creds, refresh or prompt login
+    # 1. Load saved token if it exists
+    if os.path.exists("token.json"):
+        creds = Credentials.from_authorized_user_file("token.json", SCOPES)
+
+    # 2. If no valid creds, refresh or start a new auth flow
     if not creds or not creds.valid:
         if creds and creds.expired and creds.refresh_token:
             creds.refresh(Request())
         else:
-            # Only prompt login if we don't have refreshable token
             flow = InstalledAppFlow.from_client_secrets_file(service_cred, SCOPES)
             creds = flow.run_local_server(port=0)
 
-        # 3. Save token to reuse next time
-        with open('token.json', 'w') as token_file:
+        # 3. Persist token for next run
+        with open("token.json", "w") as token_file:
             token_file.write(creds.to_json())
 
     return creds
 
-def upload_to_drive(filepath, filename):
+
+def upload_to_drive(filepath: str, filename: str) -> str:
+    """Upload a file and make it ‘Anyone with the link → Viewer’."""
     creds = get_credentials()
-    service = build('drive', 'v3', credentials=creds)
+    service = build("drive", "v3", credentials=creds, cache_discovery=False)
 
-    folder_id = '1qoT4c5ZioWwwtzADho6QbLATZG7dgs0d'
-    
-    file_metadata = {
-        'name': filename,
-        'parents': [folder_id]
-    }
-    media = MediaFileUpload(filepath, mimetype='video/mp4', resumable=True)
+    folder_id = "1qoT4c5ZioWwwtzADho6QbLATZG7dgs0d"   # your destination folder
 
-    file = service.files().create(body=file_metadata, media_body=media, fields='id').execute()
+    # --- 1. Upload the file ---
+    file_metadata = {"name": filename, "parents": [folder_id]}
+    media = MediaFileUpload(filepath, mimetype="video/mp4", resumable=True)
 
-    file_id = file.get('id')
-    print('Uploaded Succesfull -> File ID:', file_id)
+    new_file = (
+        service.files()
+        .create(body=file_metadata, media_body=media, fields="id")
+        .execute()
+    )
+    file_id = new_file["id"]
+    print("✅ Uploaded — File ID:", file_id)
 
-    return file_id
+    # --- 2. Change permission (anyone can view) ---
+    permission_body = {"type": "anyone", "role": "reader"}
+    service.permissions().create(
+        fileId=file_id,
+        body=permission_body,
+        fields="id",
+    ).execute()
+    print("🔓 Permission set to ‘Anyone with the link can view’")
