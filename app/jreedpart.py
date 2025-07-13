@@ -1,6 +1,6 @@
 import os
 import sqlite3
-from datetime import datetime
+import datetime
 
 def analyze_and_store_detections(detections,file_name,file_id):
     # Initialize summary variables
@@ -55,6 +55,7 @@ def analyze_and_store_detections(detections,file_name,file_id):
     conn.commit()
     conn.close()
 
+    print("Succesfully insert into db")
     # Return summary result
     return {
         "Summary": {
